@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWA PostMessage Demo - Parent Window</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #4f46e5;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            display: flex;
+            min-height: 600px;
+        }
+        .sidebar {
+            width: 300px;
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            padding: 20px;
+        }
+        .iframe-container {
+            flex: 1;
+            position: relative;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .message-log {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #4338ca;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status.disconnected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔗 TWA PostMessage Demo - Parent Window</h1>
+            <p>This simulates a TWA parent that can communicate with the embedded Next.js app</p>
+        </div>
+        
+        <div class="content">
+            <div class="sidebar">
+                <h3>Parent Controls</h3>
+                
+                <div class="status connected" id="status">
+                    ✅ Ready to communicate
+                </div>
+                
+                <div class="controls">
+                    <h4>Send Message to Next.js App</h4>
+                    <input type="text" id="messageInput" placeholder="Message content" value="Hello from TWA parent!">
+                    <select id="messageType">
+                        <option value="greeting">Greeting</option>
+                        <option value="data">Data</option>
+                        <option value="command">Command</option>
+                        <option value="response">Response</option>
+                    </select>
+                    <button onclick="sendMessageToApp()">Send to App</button>
+                    
+                    <h4>Send Response</h4>
+                    <textarea id="responseData" placeholder='{"status": "success", "data": "response data"}'></textarea>
+                    <button onclick="sendResponse()">Send Response</button>
+                    
+                    <h4>Actions</h4>
+                    <button onclick="clearLog()">Clear Log</button>
+                    <button onclick="reloadApp()">Reload App</button>
+                </div>
+                
+                <div class="message-log">
+                    <div id="messageLog">
+                        <div style="color: #10b981;">🟢 Parent window ready</div>
+                        <div style="color: #6b7280;">📱 Waiting for messages...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="iframe-container">
+                <iframe 
+                    id="nextjsApp" 
+                    src="http://localhost:3000" 
+                    title="Next.js TWA PostMessage Demo">
+                </iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let messageId = 0;
+        const iframe = document.getElementById('nextjsApp');
+        const messageLog = document.getElementById('messageLog');
+        const messageInput = document.getElementById('messageInput');
+        const messageType = document.getElementById('messageType');
+        const responseData = document.getElementById('responseData');
+
+        // Listen for messages from the Next.js app
+        window.addEventListener('message', function(event) {
+            // In production, validate event.origin
+            console.log('Received message from app:', event);
+            
+            logMessage('📥 RECEIVED', event.data, 'received');
+            
+            // Auto-respond to certain message types
+            if (event.data && event.data.type === 'greeting') {
+                setTimeout(() => {
+                    const response = {
+                        type: 'response',
+                        data: {
+                            message: 'Hello back from TWA parent!',
+                            timestamp: Date.now(),
+                            originalMessage: event.data
+                        },
+                        id: event.data.id,
+                        source: 'twa-parent'
+                    };
+                    sendMessageToFrame(response);
+                    logMessage('📤 AUTO-RESPONSE', response, 'sent');
+                }, 500);
+            }
+        });
+
+        function sendMessageToApp() {
+            const message = {
+                type: messageType.value,
+                data: {
+                    message: messageInput.value,
+                    timestamp: Date.now(),
+                    from: 'twa-parent'
+                },
+                id: `parent_${++messageId}_${Date.now()}`,
+                source: 'twa-parent'
+            };
+            
+            sendMessageToFrame(message);
+            logMessage('📤 SENT', message, 'sent');
+        }
+
+        function sendResponse() {
+            try {
+                const data = responseData.value ? JSON.parse(responseData.value) : {};
+                const message = {
+                    type: 'response',
+                    data: data,
+                    id: `response_${++messageId}_${Date.now()}`,
+                    source: 'twa-parent',
+                    timestamp: Date.now()
+                };
+                
+                sendMessageToFrame(message);
+                logMessage('📤 RESPONSE', message, 'sent');
+            } catch (error) {
+                logMessage('❌ ERROR', `Invalid JSON: ${error.message}`, 'error');
+            }
+        }
+
+        function sendMessageToFrame(message) {
+            iframe.contentWindow.postMessage(message, '*');
+        }
+
+        function logMessage(type, data, category) {
+            const timestamp = new Date().toLocaleTimeString();
+            const color = category === 'sent' ? '#3b82f6' : 
+                         category === 'received' ? '#10b981' : '#ef4444';
+            
+            const logEntry = document.createElement('div');
+            logEntry.style.color = color;
+            logEntry.style.marginBottom = '5px';
+            logEntry.innerHTML = `
+                <div style="font-weight: bold;">[${timestamp}] ${type}</div>
+                <div style="margin-left: 10px; word-break: break-all;">
+                    ${typeof data === 'object' ? JSON.stringify(data, null, 2) : data}
+                </div>
+            `;
+            
+            messageLog.appendChild(logEntry);
+            messageLog.scrollTop = messageLog.scrollHeight;
+        }
+
+        function clearLog() {
+            messageLog.innerHTML = '<div style="color: #10b981;">🟢 Log cleared</div>';
+        }
+
+        function reloadApp() {
+            iframe.src = iframe.src;
+            logMessage('🔄 RELOAD', 'Next.js app reloaded', 'sent');
+        }
+
+        // Initialize
+        iframe.onload = function() {
+            logMessage('✅ LOADED', 'Next.js app loaded successfully', 'received');
+        };
+
+        // Error handling
+        iframe.onerror = function() {
+            document.getElementById('status').className = 'status disconnected';
+            document.getElementById('status').innerHTML = '❌ Failed to load app';
+            logMessage('❌ ERROR', 'Failed to load Next.js app', 'error');
+        };
+
+        // Set response data example
+        responseData.value = JSON.stringify({
+            status: 'success',
+            data: {
+                userInfo: {
+                    name: 'John Doe',
+                    id: '12345'
+                },
+                permissions: ['read', 'write']
+            }
+        }, null, 2);
+    </script>
+</body>
+</html>
