@@ -13,7 +13,7 @@ const PostMessageComponent = () => {
       console.log("Received message from:", event.origin);
       
       // Get the port then use it for communication
-      var messagePort = event.ports[0];
+      const messagePort = event.ports[0];
       if (typeof messagePort === 'undefined') return;
 
       // Store the port for later use
