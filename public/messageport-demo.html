@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWA MessagePort Demo - Parent Window</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .iframe-container {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        .log-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px 10px;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+        .log-info { border-left-color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+        .log-success { border-left-color: #10b981; background: rgba(16, 185, 129, 0.1); }
+        .log-warning { border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+        .log-error { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+        .timestamp { opacity: 0.7; font-size: 10px; }
+        input, select {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin: 5px;
+        }
+        input::placeholder { color: rgba(255, 255, 255, 0.7); }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .connected { background-color: #10b981; }
+        .disconnected { background-color: #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 TWA MessagePort Communication Demo</h1>
+        <p>This demo simulates a TWA parent window that communicates with the Next.js app using MessagePort.</p>
+        
+        <div class="controls">
+            <button onclick="establishMessageChannel()">🚀 Establish MessageChannel</button>
+            <button onclick="sendTestMessage()">📤 Send Test Message</button>
+            <button onclick="sendCustomMessage()">✏️ Send Custom Message</button>
+            <button onclick="clearLogs()">🗑️ Clear Logs</button>
+        </div>
+
+        <div>
+            <input type="text" id="customMessage" placeholder="Enter custom message..." style="width: 200px;">
+            <select id="messageType">
+                <option value="greeting">Greeting</option>
+                <option value="data">Data</option>
+                <option value="command">Command</option>
+                <option value="response">Response</option>
+            </select>
+        </div>
+
+        <div id="status">
+            <p><span class="status-indicator disconnected" id="connectionStatus"></span>MessagePort Status: <span id="statusText">Not Connected</span></p>
+        </div>
+
+        <div class="iframe-container">
+            <iframe id="twaFrame" src="http://localhost:3000?demo=true&parentOrigin=messageport&sessionId=12345"></iframe>
+        </div>
+
+        <div class="log-container" id="logContainer">
+            <div class="log-entry log-info">
+                <span class="timestamp">[00:00:00]</span> TWA Parent Demo loaded - Ready to establish MessageChannel
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let messageChannel = null;
+        let port1 = null;
+        let port2 = null;
+        let isConnected = false;
+
+        function log(type, message, data = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logContainer = document.getElementById('logContainer');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            
+            let logText = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            if (data) {
+                logText += `<br><pre style="margin: 5px 0; font-size: 10px;">${JSON.stringify(data, null, 2)}</pre>`;
+            }
+            
+            logEntry.innerHTML = logText;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            console.log(`[TWA-${type.toUpperCase()}]`, message, data || '');
+        }
+
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const indicator = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            
+            if (connected) {
+                indicator.className = 'status-indicator connected';
+                statusText.textContent = 'Connected via MessagePort';
+            } else {
+                indicator.className = 'status-indicator disconnected';
+                statusText.textContent = 'Not Connected';
+            }
+        }
+
+        function establishMessageChannel() {
+            try {
+                // Create a new MessageChannel
+                messageChannel = new MessageChannel();
+                port1 = messageChannel.port1;
+                port2 = messageChannel.port2;
+
+                log('info', 'MessageChannel created');
+
+                // Set up message handler for port1 (parent side)
+                port1.onmessage = function(event) {
+                    log('success', 'Message received from Next.js app', event.data);
+                    
+                    // Handle specific message types
+                    if (event.data.type === 'port_connected') {
+                        updateConnectionStatus(true);
+                        log('success', 'MessagePort connection confirmed by Next.js app');
+                    }
+                };
+
+                // Send port2 to the iframe
+                const iframe = document.getElementById('twaFrame');
+                const targetWindow = iframe.contentWindow;
+                
+                if (targetWindow) {
+                    targetWindow.postMessage('MessageChannel setup', 'http://localhost:3000', [port2]);
+                    log('info', 'MessagePort sent to Next.js app');
+                    
+                    setTimeout(() => {
+                        if (!isConnected) {
+                            log('warning', 'No response from Next.js app - may need to refresh the iframe');
+                        }
+                    }, 2000);
+                } else {
+                    log('error', 'Could not access iframe content window');
+                }
+
+            } catch (error) {
+                log('error', 'Failed to establish MessageChannel', { error: error.message });
+            }
+        }
+
+        function sendTestMessage() {
+            if (!port1 || !isConnected) {
+                log('warning', 'MessagePort not connected. Establish connection first.');
+                return;
+            }
+
+            const testMessage = {
+                type: 'test',
+                message: 'Hello from TWA Parent!',
+                timestamp: Date.now(),
+                source: 'twa-parent',
+                sessionId: '12345'
+            };
+
+            try {
+                port1.postMessage(testMessage);
+                log('info', 'Test message sent to Next.js app', testMessage);
+            } catch (error) {
+                log('error', 'Failed to send test message', { error: error.message });
+            }
+        }
+
+        function sendCustomMessage() {
+            if (!port1 || !isConnected) {
+                log('warning', 'MessagePort not connected. Establish connection first.');
+                return;
+            }
+
+            const customText = document.getElementById('customMessage').value;
+            const messageType = document.getElementById('messageType').value;
+
+            if (!customText.trim()) {
+                log('warning', 'Please enter a message to send');
+                return;
+            }
+
+            const customMessage = {
+                type: messageType,
+                message: customText,
+                timestamp: Date.now(),
+                source: 'twa-parent',
+                custom: true
+            };
+
+            try {
+                port1.postMessage(customMessage);
+                log('info', `Custom ${messageType} message sent`, customMessage);
+                document.getElementById('customMessage').value = '';
+            } catch (error) {
+                log('error', 'Failed to send custom message', { error: error.message });
+            }
+        }
+
+        function clearLogs() {
+            const logContainer = document.getElementById('logContainer');
+            logContainer.innerHTML = '<div class="log-entry log-info"><span class="timestamp">[' + 
+                new Date().toLocaleTimeString() + ']</span> Logs cleared</div>';
+        }
+
+        // Auto-establish connection when iframe loads
+        document.getElementById('twaFrame').onload = function() {
+            log('info', 'Next.js app iframe loaded');
+            setTimeout(establishMessageChannel, 1000);
+        };
+
+        // Listen for regular postMessage as fallback
+        window.addEventListener('message', function(event) {
+            if (event.origin !== 'http://localhost:3000') return;
+            
+            log('info', 'Regular postMessage received (fallback)', event.data);
+        });
+
+        log('info', 'TWA Parent Demo initialized');
+    </script>
+</body>
+</html>

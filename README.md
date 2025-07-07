@@ -4,12 +4,15 @@ A Next.js TypeScript project designed to communicate with TWA (Trusted Web Activ
 
 ## 🚀 Features
 
-- **PostMessage Communication**: Send and receive messages to/from TWA parent context
+- **MessagePort Communication**: Advanced communication using MessageChannel for secure, direct messaging
+- **PostMessage Fallback**: Traditional postMessage support as backup
 - **TWA Detection**: Automatically detects if running within a TWA environment
-- **Real-time Messaging**: Interactive UI for testing postMessage functionality
+- **Real-time Messaging**: Interactive UI for testing communication functionality
+- **Comprehensive Logging**: Detailed activity logs visible in the UI
 - **TypeScript Support**: Full TypeScript implementation with type safety
 - **Modern UI**: Beautiful Tailwind CSS interface
 - **SSR Safe**: Properly handles server-side rendering
+- **Query Parameter Display**: Shows and sends URL parameters to TWA
 
 ## 🛠️ Getting Started
 
@@ -51,10 +54,28 @@ pnpm dev
 
 The app automatically detects TWA context and provides tools to:
 
-1. **Send Hello Message**: Quick greeting to parent TWA
-2. **Custom Messages**: Send structured data with different message types
-3. **Message History**: View all sent and received messages
-4. **Environment Info**: Display current TWA detection status
+1. **MessagePort Communication**: Secure channel using MessageChannel API
+2. **Send Hello Message**: Quick greeting to parent TWA
+3. **Custom Messages**: Send structured data with different message types
+4. **Message History**: View all sent and received messages
+5. **Activity Logs**: Detailed logging of all communication events
+6. **Environment Info**: Display current TWA detection status
+7. **Query Parameters**: Display and send URL parameters
+
+### Communication Methods
+
+The app uses a **priority-based communication system**:
+
+1. **Primary**: MessagePort (via MessageChannel) - Most secure and efficient
+2. **Fallback**: window.parent.postMessage - Traditional cross-frame communication
+3. **Alternative**: Android.receiveMessage - Direct Android interface
+
+### Testing the MessagePort Demo
+
+1. **Interactive Demo**: Open `http://localhost:3000/messageport-demo.html`
+2. **Establish Connection**: Click "🚀 Establish MessageChannel" 
+3. **Send Messages**: Use the demo controls to test communication
+4. **View Logs**: Both parent and child show detailed activity logs
 
 ### Message Types
 
