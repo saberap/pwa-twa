@@ -113,8 +113,7 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
 
     setMessages(prev => [...prev, newMessage]);
     addLog('info', 'Regular postMessage handled', event.data);
-  }, [targetOrigin]);
-  useEffect(() => {
+  }, [targetOrigin]);  useEffect(() => {
     addLog('info', 'Setting up message event listener');
     
     // Listen for messages from parent (TWA)
@@ -124,15 +123,25 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
     setPortConnectionStatus('waiting');
     addLog('info', 'Waiting for MessagePort from parent...');
     
+    // After a timeout, if no MessagePort is received, switch to disconnected
+    // This allows fallback methods to work
+    const timeout = setTimeout(() => {
+      if (portConnectionStatus === 'waiting') {
+        setPortConnectionStatus('disconnected');
+        addLog('info', 'MessagePort timeout - switching to fallback communication methods');
+      }
+    }, 3000); // Wait 3 seconds for MessagePort
+    
     return () => {
       addLog('info', 'Cleaning up message event listener');
+      clearTimeout(timeout);
       window.removeEventListener('message', handleMessage);
       if (communicationPort) {
         communicationPort.close();
         addLog('info', 'MessagePort closed');
       }
     };
-  }, [handleMessage]);
+  }, [handleMessage, portConnectionStatus]);
   // Send message to TWA parent
   const sendMessage = () => {
     try {
@@ -166,22 +175,39 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
         } catch (error) {
           addLog('error', 'Failed to send via MessagePort', error);
         }
-      }
-
-      // Fallback to regular postMessage
-      if (!messageSent) {
+      }      // Fallback to regular postMessage
+      if (!messageSent && typeof window !== 'undefined') {
         // Send to parent window (TWA)
         if (window.parent && window.parent !== window) {
-          window.parent.postMessage(dataToSend, targetOrigin);
-          addLog('info', 'Message sent via window.parent.postMessage', { data: dataToSend, origin: targetOrigin });
-          messageSent = true;
+          try {
+            window.parent.postMessage(dataToSend, targetOrigin);
+            addLog('success', 'Message sent via window.parent.postMessage', { data: dataToSend, origin: targetOrigin });
+            messageSent = true;
+          } catch (error) {
+            addLog('error', 'Failed to send via window.parent.postMessage', error);
+          }
         }
         
         // Also try Android interface if available
         if (typeof (window as any).Android !== 'undefined') {
-          (window as any).Android.receiveMessage(JSON.stringify(dataToSend));
-          addLog('info', 'Message sent via Android interface', dataToSend);
-          messageSent = true;
+          try {
+            (window as any).Android.receiveMessage(JSON.stringify(dataToSend));
+            addLog('success', 'Message sent via Android interface', dataToSend);
+            messageSent = true;
+          } catch (error) {
+            addLog('error', 'Failed to send via Android interface', error);
+          }
+        }
+
+        // Try posting to top window if different from parent
+        if (!messageSent && window.top && window.top !== window && window.top !== window.parent) {
+          try {
+            window.top.postMessage(dataToSend, targetOrigin);
+            addLog('success', 'Message sent via window.top.postMessage', dataToSend);
+            messageSent = true;
+          } catch (error) {
+            addLog('error', 'Failed to send via window.top.postMessage', error);
+          }
         }
       }
 
@@ -205,8 +231,7 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
       console.error('Error sending message:', error);
       alert('Error sending message: ' + error);
     }
-  };
-  // Send predefined hello message
+  };  // Send predefined hello message
   const sendHelloMessage = () => {
     const helloData = {
       type: 'greeting',
@@ -219,7 +244,7 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
     let messageSent = false;
 
     // Prefer MessagePort communication if available
-    if (communicationPort) {
+    if (communicationPort && portConnectionStatus === 'connected') {
       try {
         communicationPort.postMessage(helloData);
         addLog('success', 'Hello message sent via MessagePort', helloData);
@@ -229,23 +254,50 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
       }
     }
 
-    // Fallback to regular postMessage
-    if (!messageSent) {
+    // Fallback to regular postMessage (always try this in TWA)
+    if (!messageSent && typeof window !== 'undefined') {
+      // Try parent window postMessage
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage(helloData, '*');
-        addLog('info', 'Hello message sent via window.parent.postMessage', helloData);
-        messageSent = true;
+        try {
+          window.parent.postMessage(helloData, '*');
+          addLog('success', 'Hello message sent via window.parent.postMessage', helloData);
+          messageSent = true;
+        } catch (error) {
+          addLog('error', 'Failed to send via window.parent.postMessage', error);
+        }
       }
 
+      // Try Android interface
       if (typeof (window as any).Android !== 'undefined') {
-        (window as any).Android.receiveMessage(JSON.stringify(helloData));
-        addLog('info', 'Hello message sent via Android interface', helloData);
-        messageSent = true;
+        try {
+          (window as any).Android.receiveMessage(JSON.stringify(helloData));
+          addLog('success', 'Hello message sent via Android interface', helloData);
+          messageSent = true;
+        } catch (error) {
+          addLog('error', 'Failed to send via Android interface', error);
+        }
+      }
+
+      // Try posting to top window if different from parent
+      if (!messageSent && window.top && window.top !== window && window.top !== window.parent) {
+        try {
+          window.top.postMessage(helloData, '*');
+          addLog('success', 'Hello message sent via window.top.postMessage', helloData);
+          messageSent = true;
+        } catch (error) {
+          addLog('error', 'Failed to send via window.top.postMessage', error);
+        }
       }
     }
 
     if (!messageSent) {
-      addLog('warning', 'No communication method available for hello message');
+      addLog('warning', 'No communication method available for hello message', {
+        hasParent: typeof window !== 'undefined' && window.parent !== window,
+        hasAndroid: typeof (window as any).Android !== 'undefined',
+        hasTop: typeof window !== 'undefined' && window.top !== window,
+        portStatus: portConnectionStatus,
+        hasPort: !!communicationPort
+      });
     }
 
     const sentMessage: TWAMessageEvent = {
@@ -540,9 +592,7 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
             ))}
           </div>
         )}
-      </div>
-
-      {/* TWA Detection Info */}
+      </div>      {/* TWA Detection Info */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
         <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
           Environment Information
@@ -572,6 +622,90 @@ const PostMessageComponent: React.FC<PostMessageComponentProps> = ({ isInTWA }) 
               {typeof (window as any).Android !== 'undefined' ? 'Available' : 'Not Available'}
             </span>
           </div>
+          <div>
+            <strong className="text-gray-700 dark:text-gray-300">Window Top:</strong>
+            <span className="ml-2 text-gray-600 dark:text-gray-400">
+              {typeof window !== 'undefined' && window.top !== window ? 'Different' : 'Same'}
+            </span>
+          </div>
+          <div>
+            <strong className="text-gray-700 dark:text-gray-300">Origin:</strong>
+            <span className="ml-2 text-gray-600 dark:text-gray-400 break-all">
+              {typeof window !== 'undefined' ? window.location.origin : 'N/A (SSR)'}
+            </span>
+          </div>
+        </div>
+
+        {/* TWA Communication Test */}
+        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <h3 className="font-medium text-blue-900 dark:text-blue-200 mb-3">
+            TWA Communication Test
+          </h3>
+          <button
+            onClick={() => {
+              addLog('info', 'Starting TWA communication test...');
+              
+              const testData = {
+                type: 'twa_test',
+                message: 'Testing TWA communication',
+                timestamp: Date.now(),
+                source: 'nextjs-app'
+              };
+
+              let attempts = 0;
+              let successes = 0;
+
+              // Test window.parent.postMessage
+              if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+                try {
+                  window.parent.postMessage(testData, '*');
+                  addLog('success', 'Test: window.parent.postMessage successful');
+                  attempts++;
+                  successes++;
+                } catch (error) {
+                  addLog('error', 'Test: window.parent.postMessage failed', error);
+                  attempts++;
+                }
+              } else {
+                addLog('warning', 'Test: No parent window available');
+              }
+
+              // Test Android interface
+              if (typeof (window as any).Android !== 'undefined') {
+                try {
+                  (window as any).Android.receiveMessage(JSON.stringify(testData));
+                  addLog('success', 'Test: Android interface successful');
+                  attempts++;
+                  successes++;
+                } catch (error) {
+                  addLog('error', 'Test: Android interface failed', error);
+                  attempts++;
+                }
+              } else {
+                addLog('info', 'Test: No Android interface available');
+              }
+
+              // Test window.top.postMessage
+              if (typeof window !== 'undefined' && window.top && window.top !== window && window.top !== window.parent) {
+                try {
+                  window.top.postMessage(testData, '*');
+                  addLog('success', 'Test: window.top.postMessage successful');
+                  attempts++;
+                  successes++;
+                } catch (error) {
+                  addLog('error', 'Test: window.top.postMessage failed', error);
+                  attempts++;
+                }
+              } else {
+                addLog('info', 'Test: No top window available (or same as parent)');
+              }
+
+              addLog('info', `TWA communication test completed: ${successes}/${attempts} methods working`);
+            }}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            🧪 Test TWA Communication
+          </button>
         </div>
       </div>
 

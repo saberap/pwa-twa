@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWA Communication Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: #f0f4f8;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 TWA Communication Test</h1>
+        <p>This page tests communication with a TWA parent application.</p>
+        
+        <div id="status"></div>
+        
+        <div>
+            <button onclick="sendHelloMessage()">📤 Send Hello to TWA</button>
+            <button onclick="testAllMethods()">🧪 Test All Methods</button>
+            <button onclick="sendAndroidMessage()">🤖 Test Android Interface</button>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+        </div>
+
+        <div class="log" id="log">
+            <div class="info">Ready to test TWA communication...</div>
+        </div>
+    </div>
+
+    <script>
+        function log(type, message, data = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = type;
+            
+            let content = `[${timestamp}] ${message}`;
+            if (data) {
+                content += `\n${JSON.stringify(data, null, 2)}`;
+            }
+            
+            entry.innerHTML = `<pre>${content}</pre>`;
+            logElement.appendChild(entry);
+            logElement.scrollTop = logElement.scrollHeight;
+            
+            console.log(`[TWA-${type.toUpperCase()}]`, message, data || '');
+        }
+
+        function updateStatus() {
+            const statusEl = document.getElementById('status');
+            statusEl.innerHTML = '';
+
+            // Check environment
+            const isInIframe = window !== window.parent;
+            const hasAndroid = typeof window.Android !== 'undefined';
+            const hasTop = window.top !== window;
+            const hasTWAUserAgent = /wv/.test(navigator.userAgent);
+
+            statusEl.innerHTML += `<div class="${isInIframe ? 'success' : 'warning'}">
+                iframe: ${isInIframe ? 'Yes' : 'No'}
+            </div>`;
+            
+            statusEl.innerHTML += `<div class="${hasAndroid ? 'success' : 'info'}">
+                Android Interface: ${hasAndroid ? 'Available' : 'Not Available'}
+            </div>`;
+            
+            statusEl.innerHTML += `<div class="${hasTWAUserAgent ? 'success' : 'info'}">
+                TWA User Agent: ${hasTWAUserAgent ? 'Detected' : 'Not Detected'}
+            </div>`;
+
+            log('info', 'Environment check completed', {
+                isInIframe,
+                hasAndroid,
+                hasTop,
+                hasTWAUserAgent,
+                userAgent: navigator.userAgent,
+                origin: window.location.origin
+            });
+        }
+
+        function sendHelloMessage() {
+            const message = {
+                type: 'greeting',
+                message: 'Hello from TWA test page!',
+                timestamp: Date.now(),
+                source: 'twa-test-page',
+                userAgent: navigator.userAgent
+            };
+
+            let sent = false;
+
+            // Try parent window
+            if (window.parent && window.parent !== window) {
+                try {
+                    window.parent.postMessage(message, '*');
+                    log('success', 'Hello sent via window.parent.postMessage', message);
+                    sent = true;
+                } catch (error) {
+                    log('error', 'Failed to send via window.parent.postMessage', error.message);
+                }
+            }
+
+            // Try Android interface
+            if (typeof window.Android !== 'undefined') {
+                try {
+                    window.Android.receiveMessage(JSON.stringify(message));
+                    log('success', 'Hello sent via Android interface', message);
+                    sent = true;
+                } catch (error) {
+                    log('error', 'Failed to send via Android interface', error.message);
+                }
+            }
+
+            // Try top window
+            if (window.top && window.top !== window && window.top !== window.parent) {
+                try {
+                    window.top.postMessage(message, '*');
+                    log('success', 'Hello sent via window.top.postMessage', message);
+                    sent = true;
+                } catch (error) {
+                    log('error', 'Failed to send via window.top.postMessage', error.message);
+                }
+            }
+
+            if (!sent) {
+                log('error', 'No communication method available!');
+            }
+        }
+
+        function testAllMethods() {
+            log('info', 'Starting comprehensive communication test...');
+            
+            const testMessage = {
+                type: 'test',
+                message: 'Testing all communication methods',
+                timestamp: Date.now(),
+                source: 'twa-test-page'
+            };
+
+            let attempts = 0;
+            let successes = 0;
+
+            // Test 1: window.parent.postMessage
+            if (window.parent && window.parent !== window) {
+                attempts++;
+                try {
+                    window.parent.postMessage(testMessage, '*');
+                    log('success', 'Test 1: window.parent.postMessage - SUCCESS');
+                    successes++;
+                } catch (error) {
+                    log('error', 'Test 1: window.parent.postMessage - FAILED', error.message);
+                }
+            } else {
+                log('warning', 'Test 1: window.parent.postMessage - SKIPPED (no parent)');
+            }
+
+            // Test 2: Android interface
+            if (typeof window.Android !== 'undefined') {
+                attempts++;
+                try {
+                    window.Android.receiveMessage(JSON.stringify(testMessage));
+                    log('success', 'Test 2: Android interface - SUCCESS');
+                    successes++;
+                } catch (error) {
+                    log('error', 'Test 2: Android interface - FAILED', error.message);
+                }
+            } else {
+                log('info', 'Test 2: Android interface - SKIPPED (not available)');
+            }
+
+            // Test 3: window.top.postMessage
+            if (window.top && window.top !== window && window.top !== window.parent) {
+                attempts++;
+                try {
+                    window.top.postMessage(testMessage, '*');
+                    log('success', 'Test 3: window.top.postMessage - SUCCESS');
+                    successes++;
+                } catch (error) {
+                    log('error', 'Test 3: window.top.postMessage - FAILED', error.message);
+                }
+            } else {
+                log('info', 'Test 3: window.top.postMessage - SKIPPED (same as parent or not available)');
+            }
+
+            // Test 4: Custom event
+            attempts++;
+            try {
+                window.dispatchEvent(new CustomEvent('twa-message', { 
+                    detail: testMessage 
+                }));
+                log('success', 'Test 4: Custom event - SUCCESS');
+                successes++;
+            } catch (error) {
+                log('error', 'Test 4: Custom event - FAILED', error.message);
+            }
+
+            const result = `Communication test completed: ${successes}/${attempts} methods working`;
+            log(successes > 0 ? 'success' : 'error', result);
+        }
+
+        function sendAndroidMessage() {
+            if (typeof window.Android !== 'undefined') {
+                const message = {
+                    type: 'android_test',
+                    message: 'Direct Android interface test',
+                    timestamp: Date.now(),
+                    data: {
+                        platform: 'android',
+                        method: 'direct_interface'
+                    }
+                };
+
+                try {
+                    window.Android.receiveMessage(JSON.stringify(message));
+                    log('success', 'Android message sent successfully', message);
+                } catch (error) {
+                    log('error', 'Android message failed', error.message);
+                }
+            } else {
+                log('warning', 'Android interface not available');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = 
+                '<div class="info">Log cleared - ready for new tests...</div>';
+        }
+
+        // Listen for messages from parent
+        window.addEventListener('message', function(event) {
+            log('info', 'Received message from parent', {
+                origin: event.origin,
+                data: event.data,
+                source: event.source === window.parent ? 'parent' : 'unknown'
+            });
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus();
+            log('info', 'TWA Communication Test page loaded and ready');
+        });
+    </script>
+</body>
+</html>
