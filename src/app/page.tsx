@@ -12,7 +12,17 @@ export default function Home() {
     
     // Check current notification permission status
     if ('Notification' in window) {
-      setNotificationStatus(Notification.permission);
+      const currentPermission = Notification.permission;
+      
+      // Check if we have a stored permission state (useful for iOS Safari)
+      const storedPermission = localStorage.getItem('notificationPermission') as 'default' | 'granted' | 'denied' | null;
+      
+      // Use stored permission if current is 'default' but we previously had 'denied' (iOS Safari behavior)
+      if (currentPermission === 'default' && storedPermission === 'denied') {
+        setNotificationStatus('denied');
+      } else {
+        setNotificationStatus(currentPermission);
+      }
     }
   }, []);
 
@@ -25,6 +35,9 @@ export default function Home() {
     try {
       const permission = await Notification.requestPermission();
       setNotificationStatus(permission);
+      
+      // Store the permission state in localStorage for iOS Safari compatibility
+      localStorage.setItem('notificationPermission', permission);
       
       if (permission === 'granted') {
         setMessage('خوش آمدید! حالا می‌توانیم برای شما نوتیفیکشن ارسال کنیم');
@@ -41,6 +54,12 @@ export default function Home() {
       console.error('Error requesting notification permission:', error);
       setMessage('خطا در درخواست دسترسی نوتیفیکشن');
     }
+  };
+
+  const resetNotificationPermission = () => {
+    localStorage.removeItem('notificationPermission');
+    setNotificationStatus('default');
+    setMessage('');
   };
 
   if (!isClient) {
@@ -86,6 +105,12 @@ export default function Home() {
                 {notificationStatus === 'default' && 'تعیین نشده'}
               </span>
             </p>
+            <button
+              onClick={resetNotificationPermission}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              ریست کردن وضعیت (تست)
+            </button>
           </div>
 
           {notificationStatus !== 'granted' && (
